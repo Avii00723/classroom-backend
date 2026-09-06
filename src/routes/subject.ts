@@ -1,54 +1,75 @@
 import express from "express";
-import { and, or, ilike, sql, eq, desc, getTableColumns } from "drizzle-orm";
+import { and, or, ilike, sql, eq, desc, asc, getTableColumns, type SQL } from "drizzle-orm";
 import { departments, subjects } from "../db/schema/index.js";
-import { db } from "../db/index.js";
+import { db, withDatabaseRetry } from "../db/index.js";
 
 const router = express.Router();
 
 router.get("/", async (req, res) => {
     try {
-        const { search, department, page = 1, limit = 10 } = req.query;
-        const currentPage = Math.max(1, +page);
-        const limitPerPage = Math.max(1, +limit);
+        const queryValue = (key: string) => {
+            const value = req.query[key];
+            return typeof value === "string" ? value : undefined;
+        };
+        const positiveInteger = (value: string | undefined, fallback: number) => {
+            const parsed = Number(value);
+            return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+        };
+
+        // Support both the original API parameters and the bracket notation
+        // sent by the frontend data provider.
+        const search = queryValue("search");
+        const filterDepartment = queryValue("filters[0][field]") === "department"
+            ? queryValue("filters[0][value]")
+            : undefined;
+        const department = queryValue("department") ?? filterDepartment;
+        const currentPage = positiveInteger(queryValue("pagination[currentPage]") ?? queryValue("page"), 1);
+        const limitPerPage = Math.min(100, positiveInteger(queryValue("pagination[pageSize]") ?? queryValue("limit"), 10));
         const offset = (currentPage - 1) * limitPerPage;
-        const filterConditions: any[] = [];
+        const filterConditions: SQL[] = [];
 
         if (search) {
-            filterConditions.push(
-                or(
-                    ilike(subjects.name, `%${search}%`),
-                    ilike(subjects.code, `%${search}%`)
-                )
+            const searchCondition = or(
+                ilike(subjects.name, `%${search}%`),
+                ilike(subjects.code, `%${search}%`)
             );
+            if (searchCondition) filterConditions.push(searchCondition);
         }
-        if (department) {
-            filterConditions.push(
-                ilike(departments.name, `%${department}%`)
-            );
+        if (department?.trim()) {
+            const deptPattern = `%${String(department).replace(/[%_]/g, '\\$&')}%`;
+            filterConditions.push(ilike(departments.name, deptPattern));
         }
 
         const whereClause = filterConditions.length > 0 ? and(...filterConditions) : undefined;
 
-        const countResult = await
+        const countResult = await withDatabaseRetry(() =>
             db.select(
                 { count: sql<number> `count(*)` }
             )
                 .from(subjects)
                 .leftJoin(departments, eq(subjects.departmentId, departments.id))
                 .where(whereClause)
-                .execute();
+                .execute()
+        );
 
         const totalCount = countResult[0]?.count || 0;
-        const subjectsList = await db.select({ ...getTableColumns(subjects), department: { ...getTableColumns(departments) } })
+        const sorterField = queryValue("sorters[0][field]");
+        const sorterOrder = queryValue("sorters[0][order]");
+        const sortColumn = sorterField === "name" ? subjects.name : subjects.id;
+        const orderBy = sorterOrder === "asc" ? asc(sortColumn) : desc(sortColumn);
+
+        const subjectsList = await withDatabaseRetry(() => db.select({ ...getTableColumns(subjects), department: { ...getTableColumns(departments) } })
             .from(subjects)
             .leftJoin(departments, eq(subjects.departmentId, departments.id))
-            .where(whereClause).orderBy(desc(subjects.createdAt))
+            .where(whereClause)
+            .orderBy(orderBy)
             .offset(offset)
             .limit(limitPerPage)
-            .execute();
+            .execute());
 
         res.status(200).json({
             data: subjectsList,
+            total: totalCount,
             pagination: {
                 total: totalCount,
                 page: currentPage,
