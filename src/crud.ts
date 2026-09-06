@@ -1,42 +1,61 @@
 import { eq } from "drizzle-orm";
 import { db } from "./db/index.js";
-import { demoUsers } from "./db/schema/index.js";
+import { departments, subjects } from "./db/schema/index.js";
 
 async function main() {
-  const email = `admin-${Date.now()}@example.com`;
+  const suffix = Date.now();
 
   try {
     console.log("Performing CRUD operations...");
 
-    const [newUser] = await db
-      .insert(demoUsers)
-      .values({ name: "Admin User", email })
+    const [newDepartment] = await db
+      .insert(departments)
+      .values({
+        code: `DEMO-${suffix}`,
+        name: "Demo Department",
+        description: "Temporary record created by the CRUD example.",
+      })
       .returning();
 
-    if (!newUser) {
-      throw new Error("Failed to create user");
+    if (!newDepartment) {
+      throw new Error("Failed to create department");
     }
-    console.log("CREATE: New user created:", newUser);
+    console.log("CREATE: New department created:", newDepartment);
 
-    const [foundUser] = await db
+    const [newSubject] = await db
+      .insert(subjects)
+      .values({
+        departmentId: newDepartment.id,
+        code: `SUBJ-${suffix}`,
+        name: "Demo Subject",
+        description: "Temporary record created by the CRUD example.",
+      })
+      .returning();
+
+    if (!newSubject) {
+      throw new Error("Failed to create subject");
+    }
+
+    const [foundSubject] = await db
       .select()
-      .from(demoUsers)
-      .where(eq(demoUsers.id, newUser.id));
-    console.log("READ: Found user:", foundUser);
+      .from(subjects)
+      .where(eq(subjects.id, newSubject.id));
+    console.log("READ: Found subject:", foundSubject);
 
-    const [updatedUser] = await db
-      .update(demoUsers)
-      .set({ name: "Super Admin" })
-      .where(eq(demoUsers.id, newUser.id))
+    const [updatedSubject] = await db
+      .update(subjects)
+      .set({ name: "Updated Demo Subject" })
+      .where(eq(subjects.id, newSubject.id))
       .returning();
 
-    if (!updatedUser) {
-      throw new Error("Failed to update user");
+    if (!updatedSubject) {
+      throw new Error("Failed to update subject");
     }
-    console.log("UPDATE: User updated:", updatedUser);
+    console.log("UPDATE: Subject updated:", updatedSubject);
 
-    await db.delete(demoUsers).where(eq(demoUsers.id, newUser.id));
-    console.log("DELETE: User deleted.");
+    await db.delete(subjects).where(eq(subjects.id, newSubject.id));
+    await db.delete(departments).where(eq(departments.id, newDepartment.id));
+    console.log("DELETE: Temporary subject and department deleted.");
   } catch (error) {
     console.error("Error performing CRUD operations:", error);
     process.exitCode = 1;

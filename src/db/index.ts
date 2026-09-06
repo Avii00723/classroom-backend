@@ -1,6 +1,7 @@
 import "dotenv/config";
-import { neon } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-http";
+import { Pool, neonConfig } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-serverless";
+import ws from "ws";
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -8,6 +9,10 @@ if (!databaseUrl) {
   throw new Error("DATABASE_URL is not defined in .env");
 }
 
-const sql = neon(databaseUrl);
+neonConfig.webSocketConstructor = ws;
+// Drizzle issues individual pool queries. Disable the HTTP fast path because
+// this environment cannot reach Neon's HTTP endpoint.
+neonConfig.poolQueryViaFetch = false;
 
-export const db = drizzle({ client: sql });
+export const pool = new Pool({ connectionString: databaseUrl });
+export const db = drizzle({ client: pool });
