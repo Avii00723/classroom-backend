@@ -1,9 +1,12 @@
 import express from "express";
 import Subjetsrouter from "./routes/subject.js";
 import cors from "cors";
+import arcjet, { detectBot, shield, tokenBucket } from "@arcjet/node";
+import securityMiddleware from "./middleware/security.js";
 
 const app = express();
 const port = 8000;
+
 app.use(cors({
     origin: process.env.FRONTEND_URL || "http://localhost:5173",
     methods: ["GET", "POST", "PUT", "DELETE"],
@@ -12,6 +15,8 @@ app.use(cors({
 }));
 
 app.use(express.json());
+
+app.use(securityMiddleware);
 
 app.use('/api/subjects', Subjetsrouter);
 
