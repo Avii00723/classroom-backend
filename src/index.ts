@@ -1,6 +1,8 @@
 import express from "express";
 import Subjetsrouter from "./routes/subject.js";
 import cors from "cors";
+import { toNodeHandler } from "better-auth/node";
+import { auth } from "./lib/auth.js";
 import arcjet, { detectBot, shield, tokenBucket } from "@arcjet/node";
 import securityMiddleware from "./middleware/security.js";
 
@@ -13,6 +15,8 @@ app.use(cors({
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
 }));
+
+app.all('/api/auth/{*any}', toNodeHandler(auth));
 
 app.use(express.json());
 
