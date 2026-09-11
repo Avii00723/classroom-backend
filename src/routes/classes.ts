@@ -7,6 +7,50 @@ import { db, withDatabaseRetry } from "../db/index.js";
 const router = express.Router();
 const teacher = alias(user, "teacher");
 
+router.post("/", async (req, res) => {
+    try {
+        const {
+            subjectId,
+            teacherId,
+            name,
+            bannerCldPubId,
+            bannerUrl,
+            description,
+            capacity,
+            status,
+            schedules,
+            inviteCode,
+        } = req.body ?? {};
+
+        if (!subjectId || !teacherId || !name) {
+            res.status(400).json({ error: "subjectId, teacherId, and name are required" });
+            return;
+        }
+
+        const [createdClass] = await withDatabaseRetry(() =>
+            db.insert(classes)
+                .values({
+                    subjectId: Number(subjectId),
+                    teacherId: String(teacherId),
+                    name: String(name),
+                    inviteCode: inviteCode ? String(inviteCode) : `CLASS-${crypto.randomUUID()}`,
+                    bannerCldPubId: bannerCldPubId ? String(bannerCldPubId) : null,
+                    bannerUrl: bannerUrl ? String(bannerUrl) : null,
+                    description: description ? String(description) : null,
+                    capacity: capacity ? Number(capacity) : 50,
+                    status: status ?? "active",
+                    schedules: Array.isArray(schedules) ? schedules : [],
+                })
+                .returning()
+        );
+
+        res.status(201).json({ data: createdClass });
+    } catch (error) {
+        console.error("Error creating class:", error);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
 router.get("/", async (req, res) => {
     try {
         const queryValue = (key: string) => {
