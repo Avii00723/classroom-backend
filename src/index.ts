@@ -5,6 +5,8 @@ import express from "express";
 import Subjetsrouter from "./routes/subject.js";
 import ClassesRouter from "./routes/classes.js";
 import usersRouter from "./routes/users.js";
+import departmentsRouter from "./routes/departments.js";
+import dashboardRouter from "./routes/dashboard.js";
 import cors from "cors";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./lib/auth.js";
@@ -30,6 +32,8 @@ app.use(securityMiddleware);
 app.use('/api/subjects', Subjetsrouter);
 app.use('/api/classes', ClassesRouter);
 app.use('/api/users',usersRouter);
+app.use('/api/departments', departmentsRouter);
+app.use('/api/dashboard', dashboardRouter);
 
 app.get("/", (_request, response) => {
     response.send("Classroom backend is running.");

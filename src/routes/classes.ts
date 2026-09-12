@@ -1,7 +1,7 @@
  import express from "express";
 import { and, desc, eq, getTableColumns, ilike, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { classes, departments, subjects, user } from "../db/schema/index.js";
+import { classes, departments, enrollments, subjects, user } from "../db/schema/index.js";
 import { db, withDatabaseRetry } from "../db/index.js";
 
 const router = express.Router();
@@ -125,11 +125,14 @@ router.get("/", async (req, res) => {
         console.error("Error fetching classes:", error);
         res.status(500).json({ error: "Internal Server Error" });
     }
-    router.get('/:id',async(req,res)=>{
+});
+
+router.get('/:id', async (req, res) => {
+    try {
         const classId=Number(req.params.id);
 
         if(!Number.isFinite(classId)) return res.status(400).json({error:'No Class found'});
-        const [classDetails]=await db
+        const [classDetails]=await withDatabaseRetry(() => db
         .select({
             ...getTableColumns(classes),
             subject:{
@@ -147,11 +150,70 @@ router.get("/", async (req, res) => {
         .leftJoin(user,eq(classes.teacherId,user.id))
         .leftJoin(departments,eq(subjects.departmentId,departments.id))
         .where(eq(classes.id,classId))
+        .execute());
 
     if(!classDetails) return res.status(404).json({error:'No Class found.'});
 
     res.status(200).json({data:classDetails});
-    })
+    } catch (error) {
+        console.error("Error fetching class:", error);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
+router.get('/:id/users', async (req, res) => {
+    try {
+        const classId = Number(req.params.id);
+        if (!Number.isInteger(classId)) return res.status(400).json({ error: "Invalid class id" });
+        const students = await withDatabaseRetry(() => db
+            .select({ ...getTableColumns(user) })
+            .from(enrollments)
+            .innerJoin(user, eq(enrollments.studentId, user.id))
+            .where(eq(enrollments.classId, classId))
+            .orderBy(desc(enrollments.createdAt))
+            .execute());
+        res.json({ data: students, pagination: { page: 1, limit: students.length, total: students.length, totalPages: students.length ? 1 : 0 } });
+    } catch (error) {
+        console.error("Error fetching enrolled students:", error);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
+router.post('/:id/enrollments', async (req, res) => {
+    try {
+        const classId = Number(req.params.id);
+        const studentId = String(req.body?.studentId ?? "").trim();
+        if (!Number.isInteger(classId) || !studentId) return res.status(400).json({ error: "Valid classId and studentId are required" });
+
+        const [classRecord] = await db.select({ capacity: classes.capacity }).from(classes).where(eq(classes.id, classId)).execute();
+        if (!classRecord) return res.status(404).json({ error: "Class not found" });
+        const [student] = await db.select({ id: user.id, role: user.role }).from(user).where(eq(user.id, studentId)).execute();
+        if (!student || student.role !== "student") return res.status(400).json({ error: "A valid student is required" });
+        const [{ count = 0 } = {}] = await db.select({ count: sql<number>`count(*)` }).from(enrollments).where(eq(enrollments.classId, classId)).execute();
+        if (count >= classRecord.capacity) return res.status(409).json({ error: "Class capacity has been reached" });
+        const [created] = await db.insert(enrollments).values({ classId, studentId }).returning();
+        res.status(201).json({ data: created });
+    } catch (error) {
+        if (String(error).includes("duplicate key")) return res.status(409).json({ error: "Student is already enrolled" });
+        console.error("Error enrolling student:", error);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
+router.delete('/:id/enrollments/:studentId', async (req, res) => {
+    try {
+        const classId = Number(req.params.id);
+        const studentId = req.params.studentId;
+        if (!Number.isInteger(classId) || !studentId) return res.status(400).json({ error: "Invalid enrollment" });
+        const [deleted] = await db.delete(enrollments)
+            .where(and(eq(enrollments.classId, classId), eq(enrollments.studentId, studentId)))
+            .returning({ id: enrollments.id });
+        if (!deleted) return res.status(404).json({ error: "Enrollment not found" });
+        res.status(204).send();
+    } catch (error) {
+        console.error("Error removing enrollment:", error);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
 });
 
 export default router;
