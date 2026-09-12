@@ -7,22 +7,22 @@ const securityMiddleware = async (req: Request, res: Response, next: NextFunctio
 
     try {
         const role: RateLimitRole = req.user?.role ?? 'guest';
-        let limit = 5;
-        let message = 'Guest request limit exceeded (5 per minute)';
+        let limit = 60;
+        let message = 'Guest request limit exceeded (60 per minute)';
 
         switch (role) {
             case 'admin':
-                limit = 20;
-                message = 'Admin request limit exceeded (20 per minute)';
+                limit = 240;
+                message = 'Admin request limit exceeded (240 per minute)';
                 break;
             case 'teacher':
             case 'student':
-                limit = 10;
-                message = 'User request limit exceeded (10 per minute)';
+                limit = 120;
+                message = 'User request limit exceeded (120 per minute)';
                 break;
             default:
-                limit = 5;
-                message = 'Guest request limit exceeded (5 per minute)';
+                limit = 60;
+                message = 'Guest request limit exceeded (60 per minute)';
                 break;
         }
 
